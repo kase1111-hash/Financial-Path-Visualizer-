@@ -68,6 +68,14 @@ export function createTrajectoryView(options: TrajectoryViewOptions): Trajectory
   components.push(compareButton);
   headerActions.appendChild(compareButton.element);
 
+  const optimizeButton = createButton({
+    text: 'Optimizations',
+    variant: 'primary',
+    onClick: () => navigate('optimizations'),
+  });
+  components.push(optimizeButton);
+  headerActions.appendChild(optimizeButton.element);
+
   header.appendChild(headerActions);
   container.appendChild(header);
 

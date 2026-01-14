@@ -67,7 +67,7 @@ export function createStore<T extends object>(initialState: T): Store<T> {
  */
 export interface AppState {
   /** Current view */
-  view: 'quick-start' | 'editor' | 'trajectory' | 'compare' | 'settings';
+  view: 'quick-start' | 'editor' | 'trajectory' | 'compare' | 'settings' | 'optimizations';
   /** Current profile ID */
   profileId: string | null;
   /** Whether profile has unsaved changes */

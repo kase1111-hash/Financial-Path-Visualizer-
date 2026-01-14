@@ -11,6 +11,7 @@ import { appStore, type AppState } from '@ui/utils/state';
 import { createQuickStart } from '@ui/views/QuickStart';
 import { createProfileEditor } from '@ui/views/editor/ProfileEditor';
 import { createTrajectoryView } from '@ui/views/TrajectoryView';
+import { createOptimizationsView } from '@ui/views/OptimizationsView';
 import { loadProfile, loadAllProfiles } from '@storage/profile-store';
 import {
   getPreferences,
@@ -140,6 +141,16 @@ export function createApp(): AppComponent {
       case 'trajectory':
         if (currentProfile) {
           currentView = createTrajectoryView({ profile: currentProfile });
+        } else {
+          // Redirect to quick-start if no profile
+          appStore.update({ view: 'quick-start' });
+          return;
+        }
+        break;
+
+      case 'optimizations':
+        if (currentProfile) {
+          currentView = createOptimizationsView({ profile: currentProfile });
         } else {
           // Redirect to quick-start if no profile
           appStore.update({ view: 'quick-start' });
