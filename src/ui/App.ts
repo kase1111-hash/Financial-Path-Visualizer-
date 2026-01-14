@@ -12,6 +12,9 @@ import { createQuickStart } from '@ui/views/QuickStart';
 import { createProfileEditor } from '@ui/views/editor/ProfileEditor';
 import { createTrajectoryView } from '@ui/views/TrajectoryView';
 import { createOptimizationsView } from '@ui/views/OptimizationsView';
+import { createScenarioManager } from '@ui/views/ScenarioManager';
+import { createCompareView } from '@ui/views/CompareView';
+import { navigateToCompare } from '@ui/utils/state';
 import { loadProfile, loadAllProfiles } from '@storage/profile-store';
 import {
   getPreferences,
@@ -159,13 +162,33 @@ export function createApp(): AppComponent {
         break;
 
       case 'compare':
-        // Placeholder - will be implemented in Phase 8
-        main.appendChild(
-          createElement('div', { class: 'placeholder-view' }, [
-            'Comparison view coming soon...',
-          ])
-        );
-        return;
+        if (currentProfile) {
+          currentView = createScenarioManager({
+            profile: currentProfile,
+            onCompare: (baselineId, alternateId, changes) => {
+              navigateToCompare(baselineId, alternateId, changes);
+            },
+          });
+        } else {
+          // Redirect to quick-start if no profile
+          appStore.update({ view: 'quick-start' });
+          return;
+        }
+        break;
+
+      case 'compare-detail':
+        if (state.compareBaselineId && state.compareAlternateId) {
+          currentView = createCompareView({
+            baselineId: state.compareBaselineId,
+            alternateId: state.compareAlternateId,
+            changes: state.compareChanges,
+          });
+        } else {
+          // Redirect to compare if no comparison data
+          appStore.update({ view: 'compare' });
+          return;
+        }
+        break;
 
       case 'settings':
         // Placeholder

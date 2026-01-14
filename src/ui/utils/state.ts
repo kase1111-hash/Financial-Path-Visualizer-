@@ -4,6 +4,8 @@
  * Simple reactive state for UI components.
  */
 
+import type { Change } from '@models/comparison';
+
 /**
  * A listener function that receives state changes.
  */
@@ -67,7 +69,7 @@ export function createStore<T extends object>(initialState: T): Store<T> {
  */
 export interface AppState {
   /** Current view */
-  view: 'quick-start' | 'editor' | 'trajectory' | 'compare' | 'settings' | 'optimizations';
+  view: 'quick-start' | 'editor' | 'trajectory' | 'compare' | 'compare-detail' | 'settings' | 'optimizations';
   /** Current profile ID */
   profileId: string | null;
   /** Whether profile has unsaved changes */
@@ -76,6 +78,12 @@ export interface AppState {
   isLoading: boolean;
   /** Error message */
   error: string | null;
+  /** Comparison baseline profile ID */
+  compareBaselineId: string | null;
+  /** Comparison alternate profile ID */
+  compareAlternateId: string | null;
+  /** Changes made in comparison */
+  compareChanges: Change[];
 }
 
 /**
@@ -87,6 +95,9 @@ export const initialAppState: AppState = {
   isDirty: false,
   isLoading: false,
   error: null,
+  compareBaselineId: null,
+  compareAlternateId: null,
+  compareChanges: [],
 };
 
 /**
@@ -134,4 +145,17 @@ export function markDirty(): void {
  */
 export function markClean(): void {
   appStore.update({ isDirty: false });
+}
+
+/**
+ * Navigate to comparison view with specific profiles.
+ */
+export function navigateToCompare(baselineId: string, alternateId: string, changes: Change[]): void {
+  appStore.update({
+    view: 'compare-detail',
+    compareBaselineId: baselineId,
+    compareAlternateId: alternateId,
+    compareChanges: changes,
+    error: null,
+  });
 }
