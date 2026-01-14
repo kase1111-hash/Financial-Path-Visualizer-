@@ -79,10 +79,99 @@ People who feel stuck with a plan they didn't fully choose. People who know some
 
 This is a high-visibility lifeline for those who need it. If you need it, you'll find it.
 
+## Development
+
+### Prerequisites
+
+- Node.js 18+
+- npm
+
+### Getting Started
+
+```bash
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Run tests
+npm test
+
+# Run linter
+npm run lint
+```
+
+### Project Structure
+
+```
+src/
+├── models/         # Type definitions and model utilities
+│   ├── common.ts   # Shared types (Cents, Rate, ID)
+│   ├── profile.ts  # Financial profile structure
+│   ├── income.ts   # Income sources
+│   ├── debt.ts     # Debt modeling
+│   ├── trajectory.ts # Projection results
+│   ├── comparison.ts # What-if scenario comparisons
+│   └── optimization.ts # Optimization suggestions
+├── engine/         # Core calculation logic
+│   ├── projector.ts    # Main projection engine
+│   ├── comparator.ts   # Comparison calculations
+│   ├── amortization.ts # Debt amortization
+│   ├── growth.ts       # Asset growth calculations
+│   └── tax-calculator.ts # Tax estimation
+├── scanner/        # Optimization detection
+│   ├── tax-rules.ts    # Tax optimization rules
+│   ├── debt-rules.ts   # Debt strategy rules
+│   ├── savings-rules.ts # Savings opportunity rules
+│   └── housing-rules.ts # Housing optimization rules
+├── storage/        # Data persistence (IndexedDB)
+│   ├── profile-store.ts # Profile CRUD operations
+│   ├── preferences.ts   # User preferences
+│   └── export.ts        # Import/export functionality
+└── ui/            # User interface
+    ├── App.ts           # Main application
+    ├── components/      # Reusable UI components
+    ├── views/           # Page-level views
+    └── utils/           # UI utilities (DOM, formatting)
+```
+
+### Key Concepts
+
+**Currency in Cents**: All monetary values are stored as integers in cents to avoid floating-point precision issues. Use `dollarsToCents()` and `centsToDollars()` for conversion.
+
+**Rates as Decimals**: Interest rates and growth rates are stored as decimals (e.g., 0.065 for 6.5%), not percentages.
+
+**Component Pattern**: UI components follow a factory pattern returning `{ element: HTMLElement, destroy(): void }` for cleanup.
+
+### Testing
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run with coverage
+npm run test:coverage
+```
+
+### Tech Stack
+
+- **TypeScript** - Strict mode with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`
+- **Vite** - Build tool and dev server
+- **Vitest** - Test runner
+- **D3.js** - Data visualization
+- **IndexedDB (idb)** - Local storage
+
 ## License
 
-[TBD]
+MIT
 
 ## Contributing
 
-[TBD]
+Contributions welcome. Please ensure tests pass before submitting PRs.
