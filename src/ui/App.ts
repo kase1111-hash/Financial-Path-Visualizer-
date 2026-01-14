@@ -15,6 +15,7 @@ import { createOptimizationsView } from '@ui/views/OptimizationsView';
 import { createScenarioManager } from '@ui/views/ScenarioManager';
 import { createCompareView } from '@ui/views/CompareView';
 import { createSettingsView } from '@ui/views/SettingsView';
+import { createHelpView } from '@ui/views/HelpView';
 import { navigateToCompare } from '@ui/utils/state';
 import { loadProfile, loadAllProfiles } from '@storage/profile-store';
 import {
@@ -193,6 +194,10 @@ export function createApp(): AppComponent {
 
       case 'settings':
         currentView = createSettingsView();
+        break;
+
+      case 'help':
+        currentView = createHelpView();
         break;
     }
 

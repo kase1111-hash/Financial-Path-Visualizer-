@@ -21,4 +21,9 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  test: {
+    include: ['tests/unit/**/*.test.ts'],
+    exclude: ['tests/e2e/**/*'],
+    environment: 'jsdom',
+  },
 });
