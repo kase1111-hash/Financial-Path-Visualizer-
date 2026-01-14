@@ -14,6 +14,7 @@ import { createTrajectoryView } from '@ui/views/TrajectoryView';
 import { createOptimizationsView } from '@ui/views/OptimizationsView';
 import { createScenarioManager } from '@ui/views/ScenarioManager';
 import { createCompareView } from '@ui/views/CompareView';
+import { createSettingsView } from '@ui/views/SettingsView';
 import { navigateToCompare } from '@ui/utils/state';
 import { loadProfile, loadAllProfiles } from '@storage/profile-store';
 import {
@@ -191,11 +192,8 @@ export function createApp(): AppComponent {
         break;
 
       case 'settings':
-        // Placeholder
-        main.appendChild(
-          createElement('div', { class: 'placeholder-view' }, ['Settings view coming soon...'])
-        );
-        return;
+        currentView = createSettingsView();
+        break;
     }
 
     if (currentView) {
