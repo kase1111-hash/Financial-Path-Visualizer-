@@ -21,6 +21,11 @@ npm-debug.log*
 # Test coverage
 coverage/
 
+# Playwright
+playwright-report/
+playwright/.cache/
+test-results/
+
 # Environment
 .env
 .env.local
