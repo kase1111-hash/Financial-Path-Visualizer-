@@ -364,6 +364,26 @@ export function createSettingsView(): SettingsViewComponent {
       ])
     );
 
+    // Help button
+    const helpGroup = createElement('div', { class: 'settings-view__group' });
+    helpGroup.appendChild(
+      createElement('label', { class: 'settings-view__label' }, ['Need Help?'])
+    );
+    helpGroup.appendChild(
+      createElement('p', { class: 'settings-view__description' }, [
+        'View the user guide for detailed instructions on using this tool',
+      ])
+    );
+
+    const helpButton = createButton({
+      text: 'Open User Guide',
+      variant: 'secondary',
+      onClick: () => navigate('help'),
+    });
+    components.push(helpButton);
+    helpGroup.appendChild(helpButton.element);
+    content.appendChild(helpGroup);
+
     section.appendChild(content);
     return section;
   }
