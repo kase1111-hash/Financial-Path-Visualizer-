@@ -22,7 +22,11 @@ export interface ButtonOptions {
   disabled?: boolean;
   /** Whether button is loading */
   loading?: boolean;
-  /** Icon (as HTML string) */
+  /**
+   * Icon (as HTML/SVG string).
+   * SECURITY: Only pass trusted icon content - this is rendered via innerHTML.
+   * Do NOT pass user-supplied content here.
+   */
   icon?: string;
   /** Icon position */
   iconPosition?: 'left' | 'right';

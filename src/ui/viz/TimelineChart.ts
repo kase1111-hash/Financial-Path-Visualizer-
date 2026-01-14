@@ -354,11 +354,17 @@ export function createTimelineChart(options: TimelineChartOptions): TimelineChar
           highlightCircle.attr('cx', x).attr('cy', y).style('display', null);
           verticalLine.attr('x1', x).attr('x2', x).style('display', null);
 
-          // Update tooltip
-          tooltip.innerHTML = `
-            <div class="timeline-chart__tooltip-year">Year ${yearData.year} (Age ${yearData.age})</div>
-            <div class="timeline-chart__tooltip-value">${config.label}: ${config.format(config.accessor(yearData))}</div>
-          `;
+          // Update tooltip using safe DOM manipulation (avoids innerHTML XSS risk)
+          tooltip.textContent = '';
+          const yearDiv = document.createElement('div');
+          yearDiv.className = 'timeline-chart__tooltip-year';
+          yearDiv.textContent = `Year ${yearData.year} (Age ${yearData.age})`;
+          tooltip.appendChild(yearDiv);
+
+          const valueDiv = document.createElement('div');
+          valueDiv.className = 'timeline-chart__tooltip-value';
+          valueDiv.textContent = `${config.label}: ${config.format(config.accessor(yearData))}`;
+          tooltip.appendChild(valueDiv);
           tooltip.style.display = 'block';
           tooltip.style.left = `${event.offsetX + 15}px`;
           tooltip.style.top = `${event.offsetY - 10}px`;
