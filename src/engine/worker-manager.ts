@@ -7,7 +7,7 @@
 import type { FinancialProfile } from '@models/profile';
 import type { Trajectory } from '@models/trajectory';
 import type { Comparison, Change } from '@models/comparison';
-import type { WorkerRequest, WorkerResponse } from '@workers/projection-worker';
+import type { WorkerRequest, WorkerRequestBody, WorkerResponse } from '@workers/projection-worker';
 
 /**
  * Manages communication with the projection web worker.
@@ -49,15 +49,16 @@ export class ProjectionWorkerManager {
 
   /**
    * Handle response from worker.
+   * Matches responses to requests using the requestId.
    */
   private handleResponse(response: WorkerResponse): void {
-    // For simplicity, we resolve the most recent request
-    // In a more complex implementation, we'd track request IDs
-    const lastRequest = Array.from(this.pendingRequests.entries()).pop();
-    if (!lastRequest) return;
+    const handlers = this.pendingRequests.get(response.requestId);
+    if (!handlers) {
+      // Response for unknown request (possibly cancelled or timed out)
+      return;
+    }
 
-    const [id, handlers] = lastRequest;
-    this.pendingRequests.delete(id);
+    this.pendingRequests.delete(response.requestId);
 
     if (response.type === 'error') {
       handlers.reject(new Error(response.error));
@@ -68,17 +69,19 @@ export class ProjectionWorkerManager {
 
   /**
    * Send a request to the worker.
+   * Automatically assigns and tracks a unique requestId.
    */
-  private sendRequest<T>(request: WorkerRequest): Promise<T> {
+  private sendRequest<T>(request: WorkerRequestBody): Promise<T> {
     return new Promise((resolve, reject) => {
-      const id = this.requestId++;
-      this.pendingRequests.set(id, {
+      const requestId = this.requestId++;
+      this.pendingRequests.set(requestId, {
         resolve: resolve as (value: unknown) => void,
         reject,
       });
 
       const worker = this.ensureWorker();
-      worker.postMessage(request);
+      const fullRequest: WorkerRequest = { ...request, requestId };
+      worker.postMessage(fullRequest);
     });
   }
 

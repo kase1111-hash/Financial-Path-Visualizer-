@@ -106,6 +106,51 @@ export function downloadProfile(profile: FinancialProfile): void {
 }
 
 /**
+ * Validate that a value is an array (if present).
+ * Returns true if the value is undefined (will be filled by defaults) or is a valid array.
+ */
+function isValidArrayField(value: unknown): boolean {
+  if (value === undefined) {
+    return true; // Will be filled with defaults during migration
+  }
+  return Array.isArray(value) && value.every(item => typeof item === 'object' && item !== null);
+}
+
+/**
+ * Validate profile data structure.
+ * Checks that required fields exist and optional fields have correct types if present.
+ * Missing optional fields will be filled with defaults during migration.
+ */
+function validateProfileData(profile: unknown): boolean {
+  if (typeof profile !== 'object' || profile === null) {
+    return false;
+  }
+
+  const p = profile as Record<string, unknown>;
+
+  // Required string fields
+  if (typeof p.id !== 'string' || typeof p.name !== 'string') {
+    return false;
+  }
+
+  // Core array fields must be arrays if present (will be filled with defaults if missing)
+  if (!isValidArrayField(p.income) ||
+      !isValidArrayField(p.debts) ||
+      !isValidArrayField(p.obligations) ||
+      !isValidArrayField(p.assets) ||
+      !isValidArrayField(p.goals)) {
+    return false;
+  }
+
+  // Assumptions must be an object if present (will be filled with defaults if missing)
+  if (p.assumptions !== undefined && (typeof p.assumptions !== 'object' || p.assumptions === null)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Validate export data structure.
  */
 function validateExportData(data: unknown): data is ExportData {
@@ -115,13 +160,15 @@ function validateExportData(data: unknown): data is ExportData {
 
   const obj = data as Record<string, unknown>;
 
-  return (
-    typeof obj.version === 'string' &&
-    obj.app === 'financial-path-visualizer' &&
-    typeof obj.exportedAt === 'string' &&
-    typeof obj.profile === 'object' &&
-    obj.profile !== null
-  );
+  // Basic structure validation
+  if (typeof obj.version !== 'string' ||
+      obj.app !== 'financial-path-visualizer' ||
+      typeof obj.exportedAt !== 'string') {
+    return false;
+  }
+
+  // Validate profile structure (allows partial profiles that will be filled with defaults)
+  return validateProfileData(obj.profile);
 }
 
 /**

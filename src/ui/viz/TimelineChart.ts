@@ -338,7 +338,7 @@ export function createTimelineChart(options: TimelineChartOptions): TimelineChar
 
     // Mouse handlers
     overlay
-      .on('mousemove', function (event: MouseEvent) {
+      .on('mousemove', function (this: SVGRectElement, event: MouseEvent) {
         const [mouseX] = d3.pointer(event, this);
         const yearData = findNearestDataPoint(
           years,
@@ -375,7 +375,7 @@ export function createTimelineChart(options: TimelineChartOptions): TimelineChar
         verticalLine.style('display', 'none');
         tooltip.style.display = 'none';
       })
-      .on('click', function (event: MouseEvent) {
+      .on('click', function (this: SVGRectElement, event: MouseEvent) {
         const [mouseX] = d3.pointer(event, this);
         const yearData = findNearestDataPoint(
           years,

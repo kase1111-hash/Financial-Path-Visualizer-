@@ -119,7 +119,7 @@ export function createYearAxis(
 ): d3.Axis<d3.NumberValue> {
   return d3
     .axisBottom(scale)
-    .tickFormat((d) => String(d))
+    .tickFormat((d: d3.NumberValue) => String(d))
     .ticks(Math.min(10, scale.domain()[1]! - scale.domain()[0]!));
 }
 
@@ -129,7 +129,7 @@ export function createYearAxis(
 export function createCurrencyAxis(
   scale: d3.ScaleLinear<number, number>
 ): d3.Axis<d3.NumberValue> {
-  return d3.axisLeft(scale).tickFormat((d) => formatCurrencyTick(d.valueOf()));
+  return d3.axisLeft(scale).tickFormat((d: d3.NumberValue) => formatCurrencyTick(d.valueOf()));
 }
 
 /**
@@ -138,7 +138,7 @@ export function createCurrencyAxis(
 export function createPercentAxis(
   scale: d3.ScaleLinear<number, number>
 ): d3.Axis<d3.NumberValue> {
-  return d3.axisLeft(scale).tickFormat((d) => formatPercentTick(d.valueOf()));
+  return d3.axisLeft(scale).tickFormat((d: d3.NumberValue) => formatPercentTick(d.valueOf()));
 }
 
 /**
@@ -148,7 +148,7 @@ export function createYGridLines(
   scale: d3.ScaleLinear<number, number>,
   width: number
 ): d3.Axis<d3.NumberValue> {
-  return d3.axisLeft(scale).tickSize(-width).tickFormat(() => '');
+  return d3.axisLeft(scale).tickSize(-width).tickFormat((_d: d3.NumberValue) => '');
 }
 
 /**
