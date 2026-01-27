@@ -6,8 +6,11 @@
 
 import type { Optimization } from '@models/optimization';
 import { createOptimization } from '@models/optimization';
-import { FEDERAL_TAX_BRACKETS } from '@data/federal-tax-brackets';
+import { FEDERAL_TAX_BRACKETS, RETIREMENT_LIMITS } from '@data/federal-tax-brackets';
 import type { ScannerRule } from './index';
+
+/** Age threshold for catch-up contributions */
+const CATCH_UP_AGE = 50;
 
 /**
  * Detect when income is near a tax bracket boundary.
@@ -200,26 +203,43 @@ const rothConversionRule: ScannerRule = {
 
 /**
  * Detect unused tax-advantaged contribution space.
+ * Includes catch-up contributions for age 50+.
  */
 const taxAdvantagedSpaceRule: ScannerRule = {
   id: 'tax-advantaged-space',
   name: 'Tax-Advantaged Space',
   type: 'tax',
   scan: (profile, _trajectory, year): Optimization | null => {
-    // 2024 limits
-    const LIMIT_401K = 2300000; // $23,000
-    const LIMIT_IRA = 700000; // $7,000
+    // Calculate user's age for this year
+    const userAge = profile.assumptions.currentAge + (year.year - new Date().getFullYear());
+    const isEligibleForCatchUp = userAge >= CATCH_UP_AGE;
+
+    // Use centralized limits with catch-up contributions if eligible
+    const has401k = profile.assets.some(
+      (a) => a.type === 'retirement_pretax' && a.employerMatch !== null
+    );
+
+    let accountLimit: number;
+    let catchUpAmount = 0;
+    if (has401k) {
+      accountLimit = RETIREMENT_LIMITS.limit401k;
+      if (isEligibleForCatchUp) {
+        catchUpAmount = RETIREMENT_LIMITS.limit401kCatchUp;
+        accountLimit += catchUpAmount;
+      }
+    } else {
+      accountLimit = RETIREMENT_LIMITS.limitIRA;
+      if (isEligibleForCatchUp) {
+        catchUpAmount = RETIREMENT_LIMITS.limitIRACatchUp;
+        accountLimit += catchUpAmount;
+      }
+    }
 
     // Calculate total retirement contributions
     const retirementContributions = profile.assets
       .filter((a) => a.type === 'retirement_pretax' || a.type === 'retirement_roth')
       .reduce((sum, a) => sum + a.monthlyContribution * 12, 0);
 
-    const has401k = profile.assets.some(
-      (a) => a.type === 'retirement_pretax' && a.employerMatch !== null
-    );
-
-    const accountLimit = has401k ? LIMIT_401K : LIMIT_IRA;
     const unusedSpace = accountLimit - retirementContributions;
 
     if (unusedSpace < 100000) return null; // Less than $1k unused
@@ -229,10 +249,14 @@ const taxAdvantagedSpaceRule: ScannerRule = {
     // Calculate tax savings from maxing out
     const taxSavings = Math.round(unusedSpace * year.effectiveTaxRate);
 
+    const catchUpNote = isEligibleForCatchUp
+      ? ` (includes $${Math.round(catchUpAmount / 100).toLocaleString()} catch-up contribution for age 50+)`
+      : '';
+
     return createOptimization({
       type: 'tax',
       title: 'Unused Tax-Advantaged Space',
-      explanation: `You're contributing $${Math.round(retirementContributions / 100).toLocaleString()}/year to retirement accounts, leaving $${Math.round(unusedSpace / 100).toLocaleString()} of tax-advantaged ${accountType} space unused.`,
+      explanation: `You're contributing $${Math.round(retirementContributions / 100).toLocaleString()}/year to retirement accounts, leaving $${Math.round(unusedSpace / 100).toLocaleString()} of tax-advantaged ${accountType} space unused${catchUpNote}.`,
       action: `Increase ${accountType} contributions by $${Math.round(unusedSpace / 1200).toLocaleString()}/month to maximize your tax-advantaged space and save approximately $${Math.round(taxSavings / 100).toLocaleString()}/year in taxes.`,
       impact: {
         monthlyChange: Math.round(taxSavings / 12),

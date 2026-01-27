@@ -163,3 +163,62 @@ export function projectAssetOneYear(asset: Asset, annualSalary: Cents): Cents {
   const growth = Math.round(averageBalance * asset.expectedReturn);
   return asset.balance + totalContribution + growth;
 }
+
+/**
+ * Validation error for an asset field.
+ */
+export interface AssetValidationError {
+  field: keyof Asset;
+  message: string;
+}
+
+/**
+ * Validate an asset object for correctness.
+ * Returns an array of validation errors (empty if valid).
+ */
+export function validateAsset(asset: Asset): AssetValidationError[] {
+  const errors: AssetValidationError[] = [];
+
+  if (asset.balance < 0) {
+    errors.push({ field: 'balance', message: 'Balance cannot be negative' });
+  }
+
+  if (asset.monthlyContribution < 0) {
+    errors.push({ field: 'monthlyContribution', message: 'Monthly contribution cannot be negative' });
+  }
+
+  if (asset.expectedReturn < -1) {
+    errors.push({ field: 'expectedReturn', message: 'Expected return cannot be less than -100%' });
+  }
+
+  if (asset.expectedReturn > 1) {
+    errors.push({ field: 'expectedReturn', message: 'Expected return should be a decimal (e.g., 0.07 for 7%)' });
+  }
+
+  if (asset.employerMatch !== null) {
+    if (asset.employerMatch < 0) {
+      errors.push({ field: 'employerMatch', message: 'Employer match cannot be negative' });
+    }
+    if (asset.employerMatch > 10) {
+      errors.push({ field: 'employerMatch', message: 'Employer match seems too high (>1000%)' });
+    }
+  }
+
+  if (asset.matchLimit !== null) {
+    if (asset.matchLimit < 0) {
+      errors.push({ field: 'matchLimit', message: 'Match limit cannot be negative' });
+    }
+    if (asset.matchLimit > 1) {
+      errors.push({ field: 'matchLimit', message: 'Match limit should be a decimal (e.g., 0.06 for 6%)' });
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Check if an asset is valid.
+ */
+export function isValidAsset(asset: Asset): boolean {
+  return validateAsset(asset).length === 0;
+}

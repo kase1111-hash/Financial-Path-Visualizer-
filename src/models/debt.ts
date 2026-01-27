@@ -157,6 +157,81 @@ export function isHighInterestDebt(debt: Debt): boolean {
 }
 
 /**
+ * Validation error for a debt field.
+ */
+export interface DebtValidationError {
+  field: keyof Debt;
+  message: string;
+}
+
+/**
+ * Validate a debt object for correctness.
+ * Returns an array of validation errors (empty if valid).
+ */
+export function validateDebt(debt: Debt): DebtValidationError[] {
+  const errors: DebtValidationError[] = [];
+
+  if (debt.principal < 0) {
+    errors.push({ field: 'principal', message: 'Principal cannot be negative' });
+  }
+
+  if (debt.interestRate < 0) {
+    errors.push({ field: 'interestRate', message: 'Interest rate cannot be negative' });
+  }
+
+  if (debt.interestRate > 1) {
+    errors.push({ field: 'interestRate', message: 'Interest rate should be a decimal (e.g., 0.065 for 6.5%)' });
+  }
+
+  if (debt.minimumPayment < 0) {
+    errors.push({ field: 'minimumPayment', message: 'Minimum payment cannot be negative' });
+  }
+
+  if (debt.actualPayment < 0) {
+    errors.push({ field: 'actualPayment', message: 'Actual payment cannot be negative' });
+  }
+
+  if (debt.termMonths < 0) {
+    errors.push({ field: 'termMonths', message: 'Term months cannot be negative' });
+  }
+
+  if (debt.monthsRemaining < 0) {
+    errors.push({ field: 'monthsRemaining', message: 'Months remaining cannot be negative' });
+  }
+
+  if (debt.type === 'mortgage') {
+    if (debt.propertyValue !== null && debt.propertyValue < 0) {
+      errors.push({ field: 'propertyValue', message: 'Property value cannot be negative' });
+    }
+
+    if (debt.pmiThreshold !== null && (debt.pmiThreshold < 0 || debt.pmiThreshold > 1)) {
+      errors.push({ field: 'pmiThreshold', message: 'PMI threshold must be between 0 and 1' });
+    }
+
+    if (debt.pmiAmount !== null && debt.pmiAmount < 0) {
+      errors.push({ field: 'pmiAmount', message: 'PMI amount cannot be negative' });
+    }
+
+    if (debt.escrowTaxes !== null && debt.escrowTaxes < 0) {
+      errors.push({ field: 'escrowTaxes', message: 'Escrow taxes cannot be negative' });
+    }
+
+    if (debt.escrowInsurance !== null && debt.escrowInsurance < 0) {
+      errors.push({ field: 'escrowInsurance', message: 'Escrow insurance cannot be negative' });
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Check if a debt is valid.
+ */
+export function isValidDebt(debt: Debt): boolean {
+  return validateDebt(debt).length === 0;
+}
+
+/**
  * Calculate annual interest paid (approximate, assuming balance stays constant).
  * For precise calculations, use the amortization engine.
  */

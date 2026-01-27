@@ -15,6 +15,12 @@ import { generateId } from '@models/common';
 const EXPORT_VERSION = '1.0';
 
 /**
+ * Maximum allowed import file size in bytes (10 MB).
+ * Prevents memory issues from very large files.
+ */
+const MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
+
+/**
  * Exported data structure.
  */
 export interface ExportData {
@@ -172,6 +178,86 @@ function validateExportData(data: unknown): data is ExportData {
 }
 
 /**
+ * Validate and sanitize numeric fields in imported data.
+ * Returns warnings for any corrected values.
+ */
+function sanitizeNumericFields(profile: FinancialProfile): string[] {
+  const warnings: string[] = [];
+
+  // Sanitize income fields
+  for (const income of profile.income) {
+    if (income.amount < 0) {
+      warnings.push(`Income "${income.name}": corrected negative amount to 0`);
+      income.amount = 0;
+    }
+    if (income.hoursPerWeek < 0) {
+      warnings.push(`Income "${income.name}": corrected negative hours to 0`);
+      income.hoursPerWeek = 0;
+    }
+    if (income.hoursPerWeek > 168) {
+      warnings.push(`Income "${income.name}": corrected hours to max 168`);
+      income.hoursPerWeek = 168;
+    }
+    if (income.expectedGrowth < -1) {
+      warnings.push(`Income "${income.name}": corrected growth rate to -100%`);
+      income.expectedGrowth = -1;
+    }
+  }
+
+  // Sanitize debt fields
+  for (const debt of profile.debts) {
+    if (debt.principal < 0) {
+      warnings.push(`Debt "${debt.name}": corrected negative principal to 0`);
+      debt.principal = 0;
+    }
+    if (debt.interestRate < 0) {
+      warnings.push(`Debt "${debt.name}": corrected negative interest rate to 0`);
+      debt.interestRate = 0;
+    }
+    if (debt.minimumPayment < 0) {
+      warnings.push(`Debt "${debt.name}": corrected negative minimum payment to 0`);
+      debt.minimumPayment = 0;
+    }
+    if (debt.actualPayment < 0) {
+      warnings.push(`Debt "${debt.name}": corrected negative actual payment to 0`);
+      debt.actualPayment = 0;
+    }
+  }
+
+  // Sanitize asset fields
+  for (const asset of profile.assets) {
+    if (asset.balance < 0) {
+      warnings.push(`Asset "${asset.name}": corrected negative balance to 0`);
+      asset.balance = 0;
+    }
+    if (asset.monthlyContribution < 0) {
+      warnings.push(`Asset "${asset.name}": corrected negative contribution to 0`);
+      asset.monthlyContribution = 0;
+    }
+    if (asset.expectedReturn < -1) {
+      warnings.push(`Asset "${asset.name}": corrected return rate to -100%`);
+      asset.expectedReturn = -1;
+    }
+  }
+
+  // Sanitize assumption fields
+  if (profile.assumptions.currentAge < 0) {
+    warnings.push('Assumptions: corrected negative age to 0');
+    profile.assumptions.currentAge = 0;
+  }
+  if (profile.assumptions.currentAge > 150) {
+    warnings.push('Assumptions: corrected age to max 150');
+    profile.assumptions.currentAge = 150;
+  }
+  if (profile.assumptions.lifeExpectancy < profile.assumptions.currentAge) {
+    warnings.push('Assumptions: corrected life expectancy to be greater than current age');
+    profile.assumptions.lifeExpectancy = profile.assumptions.currentAge + 30;
+  }
+
+  return warnings;
+}
+
+/**
  * Migrate old export formats to current version.
  */
 function migrateExportData(data: ExportData): { profile: FinancialProfile; warnings: string[] } {
@@ -198,6 +284,10 @@ function migrateExportData(data: ExportData): { profile: FinancialProfile; warni
       ...profile.assumptions,
     },
   };
+
+  // Validate and sanitize numeric field values
+  const sanitizationWarnings = sanitizeNumericFields(profile);
+  warnings.push(...sanitizationWarnings);
 
   // Generate new ID to avoid conflicts
   profile.id = generateId();
@@ -261,6 +351,15 @@ export async function importFromFile(file: File): Promise<ImportResult> {
     return {
       success: false,
       error: 'File must be a JSON file',
+      warnings: [],
+    };
+  }
+
+  // Validate file size
+  if (file.size > MAX_IMPORT_FILE_SIZE) {
+    return {
+      success: false,
+      error: `File is too large (${Math.round(file.size / 1024 / 1024)}MB). Maximum allowed size is ${Math.round(MAX_IMPORT_FILE_SIZE / 1024 / 1024)}MB.`,
       warnings: [],
     };
   }

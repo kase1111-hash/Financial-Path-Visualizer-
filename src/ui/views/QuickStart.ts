@@ -364,6 +364,7 @@ export function createQuickStart(): QuickStartComponent {
         homeAppreciation: 0.03,
         salaryGrowth: raiseInput.getValue() ?? 0.02,
         retirementWithdrawalRate: 0.04,
+        incomeReplacementRatio: 0.80,
         lifeExpectancy: 85,
         currentAge,
         taxFilingStatus: filingStatusMap[filingSelect.getValue() ?? 'single'] ?? 'single',

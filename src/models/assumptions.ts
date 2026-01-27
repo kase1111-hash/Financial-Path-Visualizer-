@@ -42,6 +42,11 @@ export interface Assumptions {
    */
   retirementWithdrawalRate: Rate;
   /**
+   * Income replacement ratio for retirement readiness (default 80% = 0.80).
+   * The percentage of pre-retirement income needed in retirement.
+   */
+  incomeReplacementRatio: Rate;
+  /**
    * Life expectancy for projection endpoint (default 85).
    */
   lifeExpectancy: number;
@@ -68,6 +73,7 @@ export const DEFAULT_ASSUMPTIONS: Assumptions = {
   homeAppreciation: 0.03,
   salaryGrowth: 0.02,
   retirementWithdrawalRate: 0.04,
+  incomeReplacementRatio: 0.80,
   lifeExpectancy: 85,
   currentAge: 30,
   taxFilingStatus: 'single',

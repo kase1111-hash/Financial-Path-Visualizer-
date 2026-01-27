@@ -111,3 +111,61 @@ export function projectIncomeToYear(income: Income, currentYear: number, targetY
   const growthMultiplier = Math.pow(1 + income.expectedGrowth, yearsElapsed);
   return Math.round(calculateAnnualIncome(income) * growthMultiplier);
 }
+
+/**
+ * Validation error for an income field.
+ */
+export interface IncomeValidationError {
+  field: keyof Income;
+  message: string;
+}
+
+/**
+ * Validate an income object for correctness.
+ * Returns an array of validation errors (empty if valid).
+ */
+export function validateIncome(income: Income): IncomeValidationError[] {
+  const errors: IncomeValidationError[] = [];
+
+  if (income.amount < 0) {
+    errors.push({ field: 'amount', message: 'Amount cannot be negative' });
+  }
+
+  if (income.hoursPerWeek < 0) {
+    errors.push({ field: 'hoursPerWeek', message: 'Hours per week cannot be negative' });
+  }
+
+  if (income.hoursPerWeek > 168) {
+    errors.push({ field: 'hoursPerWeek', message: 'Hours per week cannot exceed 168 (hours in a week)' });
+  }
+
+  if (income.variability < 0 || income.variability > 1) {
+    errors.push({ field: 'variability', message: 'Variability must be between 0 and 1' });
+  }
+
+  if (income.expectedGrowth < -1) {
+    errors.push({ field: 'expectedGrowth', message: 'Expected growth cannot be less than -100%' });
+  }
+
+  if (income.expectedGrowth > 1) {
+    errors.push({ field: 'expectedGrowth', message: 'Expected growth rate should be a decimal (e.g., 0.03 for 3%)' });
+  }
+
+  if (income.endDate !== null) {
+    if (income.endDate.month < 1 || income.endDate.month > 12) {
+      errors.push({ field: 'endDate', message: 'End date month must be between 1 and 12' });
+    }
+    if (income.endDate.year < 1900 || income.endDate.year > 2200) {
+      errors.push({ field: 'endDate', message: 'End date year must be reasonable (1900-2200)' });
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Check if an income is valid.
+ */
+export function isValidIncome(income: Income): boolean {
+  return validateIncome(income).length === 0;
+}

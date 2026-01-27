@@ -84,7 +84,7 @@ export function generateTrajectory(profile: FinancialProfile): Trajectory {
         .filter((a) => a.type === 'retirement_pretax' || a.type === 'retirement_roth')
         .reduce((sum, a) => sum + (assetBalances.get(a.id) ?? 0), 0);
 
-      const desiredRetirementIncome = trajectoryYear.netIncome * 0.8; // 80% of current income
+      const desiredRetirementIncome = trajectoryYear.netIncome * profile.assumptions.incomeReplacementRatio;
       const readiness = calculateRetirementReadiness(
         retirementAssets,
         desiredRetirementIncome,
@@ -366,7 +366,7 @@ function checkGoalAchieved(
         })
         .reduce((sum, a) => sum + a.balance, 0);
 
-      const desiredIncome = year.netIncome * 0.8;
+      const desiredIncome = year.netIncome * profile.assumptions.incomeReplacementRatio;
       const readiness = calculateRetirementReadiness(
         retirementAssets,
         desiredIncome,
