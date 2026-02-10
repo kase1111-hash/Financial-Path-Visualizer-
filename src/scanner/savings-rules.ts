@@ -7,6 +7,7 @@
 import type { Optimization } from '@models/optimization';
 import { createOptimization } from '@models/optimization';
 import type { ScannerRule } from './index';
+import { calculateOptimizationImpact, estimateLifetimeValue } from './impact-calculator';
 
 /**
  * Detect inadequate emergency fund.
@@ -62,7 +63,7 @@ const savingsRateAlertRule: ScannerRule = {
   id: 'savings-rate-alert',
   name: 'Savings Rate Alert',
   type: 'savings',
-  scan: (_profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     // Target savings rate: 20% of gross income
     const TARGET_SAVINGS_RATE = 0.2;
 
@@ -75,8 +76,16 @@ const savingsRateAlertRule: ScannerRule = {
 
     if (increaseNeeded < 100000) return null; // Less than $1k difference
 
-    // Calculate impact of increased savings
-    const additionalRetirementSavings = increaseNeeded * 25; // 25 year horizon at ~7% return
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      // Add savings contribution to an investment or savings account
+      const investmentAsset = modified.assets.find(
+        (a) => a.type === 'investment' || a.type === 'savings'
+      );
+      if (investmentAsset) {
+        investmentAsset.monthlyContribution += Math.round(increaseNeeded / 12);
+      }
+    });
 
     return createOptimization({
       type: 'savings',
@@ -86,8 +95,8 @@ const savingsRateAlertRule: ScannerRule = {
       impact: {
         monthlyChange: 0,
         annualChange: increaseNeeded,
-        lifetimeChange: additionalRetirementSavings,
-        retirementDateChange: -Math.round((increaseNeeded * 12) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Savings Rate',
       },
       confidence: 'medium',
@@ -99,12 +108,13 @@ const savingsRateAlertRule: ScannerRule = {
 
 /**
  * Detect cash sitting in low-yield accounts that could be invested.
+ * Uses the profile's marketReturn assumption instead of a hardcoded rate.
  */
 const investmentOpportunityRule: ScannerRule = {
   id: 'investment-opportunity',
   name: 'Investment Opportunity',
   type: 'savings',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     // Find low-yield savings beyond emergency fund
     const savingsAssets = profile.assets.filter(
       (a) => a.type === 'savings' && a.expectedReturn < 0.05
@@ -128,21 +138,38 @@ const investmentOpportunityRule: ScannerRule = {
     );
     if (hasHighInterestDebt) return null;
 
-    // Calculate potential returns
-    const EXPECTED_INVESTMENT_RETURN = 0.07;
-    const CURRENT_SAVINGS_RETURN = 0.02;
-    const additionalReturn = Math.round(excessCash * (EXPECTED_INVESTMENT_RETURN - CURRENT_SAVINGS_RETURN));
+    // Use the profile's market return and the average savings return
+    const expectedInvestmentReturn = profile.assumptions.marketReturn;
+    const avgSavingsReturn = savingsAssets.length > 0
+      ? savingsAssets.reduce((sum, a) => sum + a.expectedReturn, 0) / savingsAssets.length
+      : 0.02;
+    const additionalReturn = Math.round(excessCash * (expectedInvestmentReturn - avgSavingsReturn));
+    const yearsRemaining = profile.assumptions.lifeExpectancy - profile.assumptions.currentAge;
+    const futureValue = Math.round(excessCash * Math.pow(1 + expectedInvestmentReturn, Math.min(20, yearsRemaining)));
+
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      // Move excess cash from savings to investment
+      const savings = modified.assets.find((a) => a.type === 'savings');
+      if (savings) {
+        savings.balance = Math.max(0, savings.balance - excessCash);
+      }
+      const investment = modified.assets.find((a) => a.type === 'investment');
+      if (investment) {
+        investment.balance += excessCash;
+      }
+    });
 
     return createOptimization({
       type: 'savings',
       title: 'Put Cash to Work',
       explanation: `You have $${Math.round(excessCash / 100).toLocaleString()} in savings beyond your 6-month emergency fund. This cash is likely earning minimal interest when it could be invested for long-term growth.`,
-      action: `Consider investing $${Math.round(excessCash / 100).toLocaleString()} in a diversified portfolio. At historical market returns, this could grow to approximately $${Math.round((excessCash * Math.pow(1.07, 20)) / 100).toLocaleString()} in 20 years.`,
+      action: `Consider investing $${Math.round(excessCash / 100).toLocaleString()} in a diversified portfolio. At your assumed ${(expectedInvestmentReturn * 100).toFixed(0)}% market return, this could grow to approximately $${Math.round(futureValue / 100).toLocaleString()} in ${Math.min(20, yearsRemaining)} years.`,
       impact: {
         monthlyChange: 0,
         annualChange: additionalReturn,
-        lifetimeChange: additionalReturn * 20,
-        retirementDateChange: -Math.round((additionalReturn * 24) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Investment Returns',
       },
       confidence: year.discretionaryIncome > 0 ? 'medium' : 'low',
@@ -164,7 +191,7 @@ const hsaOptimizationRule: ScannerRule = {
   id: 'hsa-optimization',
   name: 'HSA Optimization',
   type: 'savings',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     // 2024 HSA limits
     const HSA_INDIVIDUAL_LIMIT = 415000; // $4,150
 
@@ -190,6 +217,14 @@ const hsaOptimizationRule: ScannerRule = {
 
     const taxSavings = Math.round(unusedSpace * year.effectiveTaxRate);
 
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      const hsa = modified.assets.find((a) => a.type === 'hsa');
+      if (hsa) {
+        hsa.monthlyContribution += Math.round(unusedSpace / 12);
+      }
+    });
+
     return createOptimization({
       type: 'savings',
       title: 'Maximize HSA Contributions',
@@ -198,8 +233,8 @@ const hsaOptimizationRule: ScannerRule = {
       impact: {
         monthlyChange: Math.round(taxSavings / 12),
         annualChange: taxSavings,
-        lifetimeChange: taxSavings * 30,
-        retirementDateChange: -Math.round((taxSavings * 6) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Tax-Advantaged Savings',
       },
       confidence: 'high',
@@ -239,6 +274,14 @@ const automateSavingsRule: ScannerRule = {
     const savingsRatio = totalMonthlyContributions / monthlyDiscretionary;
     if (savingsRatio > 0.3) return null; // Already saving 30%+ of discretionary
 
+    // Use annuity formula with the user's market return assumption
+    const yearsRemaining = profile.assumptions.lifeExpectancy - profile.assumptions.currentAge;
+    const lifetimeChange = estimateLifetimeValue(
+      annualIncrease,
+      profile.assumptions.marketReturn,
+      yearsRemaining
+    );
+
     return createOptimization({
       type: 'savings',
       title: 'Automate Additional Savings',
@@ -247,7 +290,7 @@ const automateSavingsRule: ScannerRule = {
       impact: {
         monthlyChange: 0,
         annualChange: annualIncrease,
-        lifetimeChange: annualIncrease * 25,
+        lifetimeChange,
         retirementDateChange: -Math.round((annualIncrease * 12) / year.grossIncome),
         metricAffected: 'Wealth Accumulation',
       },

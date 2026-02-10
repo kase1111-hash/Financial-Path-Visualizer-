@@ -8,6 +8,7 @@ import type { Optimization } from '@models/optimization';
 import { createOptimization } from '@models/optimization';
 import { isHighInterestDebt, calculateLTV } from '@models/debt';
 import type { ScannerRule } from './index';
+import { calculateOptimizationImpact } from './impact-calculator';
 
 /**
  * Detect high-interest debt when user has low-yield savings.
@@ -17,7 +18,7 @@ const highInterestVsSavingsRule: ScannerRule = {
   id: 'high-interest-vs-savings',
   name: 'High-Interest Debt vs Savings',
   type: 'debt',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     // Find high-interest debts
     const highInterestDebts = profile.debts.filter((d) => isHighInterestDebt(d) && d.principal > 0);
     if (highInterestDebts.length === 0) return null;
@@ -47,6 +48,18 @@ const highInterestVsSavingsRule: ScannerRule = {
     const amountToApply = Math.min(excessSavings, highestDebt.principal);
     const interestSaved = Math.round(amountToApply * highestDebt.interestRate);
 
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      const debt = modified.debts.find((d) => d.id === highestDebt.id);
+      if (debt) {
+        debt.principal = Math.max(0, debt.principal - amountToApply);
+      }
+      const savings = modified.assets.find((a) => a.type === 'savings');
+      if (savings) {
+        savings.balance = Math.max(0, savings.balance - amountToApply);
+      }
+    });
+
     return createOptimization({
       type: 'debt',
       title: 'Pay Down High-Interest Debt',
@@ -55,8 +68,8 @@ const highInterestVsSavingsRule: ScannerRule = {
       impact: {
         monthlyChange: Math.round(interestSaved / 12),
         annualChange: interestSaved,
-        lifetimeChange: interestSaved * 5, // Rough estimate
-        retirementDateChange: -Math.round((interestSaved * 6) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Interest Expense',
       },
       confidence: 'high',
@@ -76,7 +89,7 @@ const pmiRemovalRule: ScannerRule = {
   id: 'pmi-removal',
   name: 'PMI Removal Opportunity',
   type: 'debt',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     // Find mortgages with PMI
     const mortgagesWithPMI = profile.debts.filter(
       (d) =>
@@ -104,6 +117,14 @@ const pmiRemovalRule: ScannerRule = {
       const annualPMISavings = mortgage.pmiAmount * 12;
       const paybackMonths = Math.round(amountToPayDown / (annualPMISavings / 12));
 
+      // Calculate real lifetime impact via trajectory comparison
+      const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+        const debt = modified.debts.find((d) => d.id === mortgage.id);
+        if (debt) {
+          debt.principal = Math.max(0, debt.principal - amountToPayDown);
+        }
+      });
+
       return createOptimization({
         type: 'debt',
         title: 'Remove PMI',
@@ -112,8 +133,8 @@ const pmiRemovalRule: ScannerRule = {
         impact: {
           monthlyChange: mortgage.pmiAmount,
           annualChange: annualPMISavings,
-          lifetimeChange: annualPMISavings * Math.ceil(mortgage.monthsRemaining / 12),
-          retirementDateChange: -Math.round((annualPMISavings * 12) / year.grossIncome),
+          lifetimeChange: impact.lifetimeChange,
+          retirementDateChange: impact.retirementDateChange,
           metricAffected: 'Housing Cost',
         },
         confidence: 'high',
@@ -137,7 +158,7 @@ const debtAvalancheRule: ScannerRule = {
   id: 'debt-avalanche',
   name: 'Debt Avalanche Strategy',
   type: 'debt',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     // Get debts with balances, sorted by interest rate (highest first)
     const debtsWithBalance = profile.debts
       .filter((d) => d.principal > 0)
@@ -161,6 +182,17 @@ const debtAvalancheRule: ScannerRule = {
 
     if (annualSavings < 5000) return null; // Less than $50/year
 
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      const lowDebt = modified.debts.find((d) => d.id === extraPaymentOnOtherDebt.id);
+      const highDebt = modified.debts.find((d) => d.id === highestRateDebt.id);
+      if (lowDebt && highDebt) {
+        const extra = lowDebt.actualPayment - lowDebt.minimumPayment;
+        lowDebt.actualPayment = lowDebt.minimumPayment;
+        highDebt.actualPayment += extra;
+      }
+    });
+
     return createOptimization({
       type: 'debt',
       title: 'Optimize Debt Payoff Order',
@@ -169,8 +201,8 @@ const debtAvalancheRule: ScannerRule = {
       impact: {
         monthlyChange: Math.round(annualSavings / 12),
         annualChange: annualSavings,
-        lifetimeChange: annualSavings * 10, // Rough estimate
-        retirementDateChange: -Math.round((annualSavings * 6) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Interest Expense',
       },
       confidence: 'high',
@@ -181,33 +213,34 @@ const debtAvalancheRule: ScannerRule = {
 };
 
 /**
- * Detect refinance opportunities based on current rates vs debt rates.
+ * Detect refinance opportunities based on profile assumptions vs current debt rates.
+ * Uses the user's marketReturn assumption as a reference point for reasonable
+ * borrowing costs, since market rates track together with refinance rates.
  */
 const refinanceOpportunityRule: ScannerRule = {
   id: 'refinance-opportunity',
   name: 'Refinance Opportunity',
   type: 'debt',
-  scan: (profile, _trajectory, year): Optimization | null => {
-    // Assumed current market rates (in real app, would be fetched)
-    const CURRENT_MORTGAGE_RATE = 0.065; // 6.5%
-    const CURRENT_AUTO_RATE = 0.07; // 7%
-    const CURRENT_STUDENT_RATE = 0.055; // 5.5%
-
-    const currentRates: Record<string, number> = {
-      mortgage: CURRENT_MORTGAGE_RATE,
-      auto: CURRENT_AUTO_RATE,
-      student: CURRENT_STUDENT_RATE,
+  scan: (profile, trajectory, year): Optimization | null => {
+    // Derive reasonable refinance thresholds from the user's market return assumption.
+    // Mortgage rates are typically 1-2% below equity market returns,
+    // auto loans near market return, student loans slightly below.
+    const { marketReturn } = profile.assumptions;
+    const refinanceThresholds: Record<string, number> = {
+      mortgage: marketReturn - 0.005,
+      auto: marketReturn,
+      student: marketReturn - 0.015,
     };
 
-    // Find debts where current rate is significantly higher than market
+    // Find debts where current rate is significantly higher than threshold
     const refinanceCandidates = profile.debts.filter((d) => {
-      const marketRate = currentRates[d.type];
-      if (!marketRate) return false;
+      const threshold = refinanceThresholds[d.type];
+      if (threshold === undefined) return false;
       if (d.principal < 1000000) return false; // Less than $10k
       if (d.monthsRemaining < 24) return false; // Less than 2 years left
 
-      // At least 1% rate difference
-      return d.interestRate > marketRate + 0.01;
+      // At least 1% rate difference above threshold
+      return d.interestRate > threshold + 0.01;
     });
 
     if (refinanceCandidates.length === 0) return null;
@@ -217,8 +250,8 @@ const refinanceOpportunityRule: ScannerRule = {
     let bestSavings = 0;
 
     for (const debt of refinanceCandidates) {
-      const marketRate = currentRates[debt.type]!;
-      const rateSavings = debt.interestRate - marketRate;
+      const threshold = refinanceThresholds[debt.type]!;
+      const rateSavings = debt.interestRate - threshold;
       const annualSavings = Math.round(debt.principal * rateSavings);
       if (annualSavings > bestSavings) {
         bestSavings = annualSavings;
@@ -226,7 +259,7 @@ const refinanceOpportunityRule: ScannerRule = {
       }
     }
 
-    const marketRate = currentRates[bestCandidate.type]!;
+    const targetRate = refinanceThresholds[bestCandidate.type]!;
     const yearsRemaining = Math.ceil(bestCandidate.monthsRemaining / 12);
     const totalSavings = bestSavings * yearsRemaining;
 
@@ -239,16 +272,24 @@ const refinanceOpportunityRule: ScannerRule = {
 
     if (netSavings < 50000) return null; // Less than $500 net savings
 
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      const debt = modified.debts.find((d) => d.id === bestCandidate.id);
+      if (debt) {
+        debt.interestRate = targetRate;
+      }
+    });
+
     return createOptimization({
       type: 'debt',
       title: `Refinance ${bestCandidate.name}`,
-      explanation: `Your ${bestCandidate.name} has a ${(bestCandidate.interestRate * 100).toFixed(2)}% rate while current market rates are around ${(marketRate * 100).toFixed(2)}%. With ${yearsRemaining} years remaining, refinancing could save significant interest.`,
-      action: `Refinance ${bestCandidate.name} from ${(bestCandidate.interestRate * 100).toFixed(2)}% to approximately ${(marketRate * 100).toFixed(2)}%. Estimated savings: $${Math.round(totalSavings / 100).toLocaleString()} over the loan term, minus ~$${Math.round(closingCosts / 100).toLocaleString()} closing costs.`,
+      explanation: `Your ${bestCandidate.name} has a ${(bestCandidate.interestRate * 100).toFixed(2)}% rate, which appears above current market levels. With ${yearsRemaining} years remaining, refinancing could save significant interest.`,
+      action: `Explore refinancing ${bestCandidate.name} from ${(bestCandidate.interestRate * 100).toFixed(2)}% to a lower rate. Estimated savings: $${Math.round(totalSavings / 100).toLocaleString()} over the loan term, minus ~$${Math.round(closingCosts / 100).toLocaleString()} closing costs. Check current rates with multiple lenders.`,
       impact: {
         monthlyChange: Math.round(bestSavings / 12),
         annualChange: bestSavings,
-        lifetimeChange: netSavings,
-        retirementDateChange: -Math.round((netSavings * 2) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Interest Expense',
       },
       confidence: 'medium',
