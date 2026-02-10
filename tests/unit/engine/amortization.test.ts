@@ -126,6 +126,29 @@ describe('amortization', () => {
       expect(lastPayment?.remainingBalance).toBe(0);
     });
 
+    it('should have zero balance for a 30-year mortgage', () => {
+      // Standard 30-year mortgage — the rounding fix must zero this out
+      const principal = dollarsToCents(300000);
+      const payment = calculateMonthlyPayment(principal, 0.065, 360);
+      const schedule = generateAmortizationSchedule(principal, 0.065, payment, 360);
+
+      const lastPayment = schedule[schedule.length - 1];
+      expect(lastPayment?.remainingBalance).toBe(0);
+    });
+
+    it('should have total principal + interest equal total payments', () => {
+      const principal = dollarsToCents(300000);
+      const payment = calculateMonthlyPayment(principal, 0.065, 360);
+      const schedule = generateAmortizationSchedule(principal, 0.065, payment, 360);
+
+      const totalPrincipal = schedule.reduce((sum, p) => sum + p.principal, 0);
+      const totalInterest = schedule.reduce((sum, p) => sum + p.interest, 0);
+      const totalPayments = schedule.reduce((sum, p) => sum + p.totalPayment, 0);
+
+      expect(totalPrincipal).toBe(principal);
+      expect(totalPayments).toBe(totalPrincipal + totalInterest);
+    });
+
     it('should track cumulative interest', () => {
       const schedule = generateAmortizationSchedule(
         dollarsToCents(10000),
@@ -176,6 +199,22 @@ describe('amortization', () => {
       expect(result.isPaidOff).toBe(true);
       expect(result.principalPaid).toBe(0);
       expect(result.interestPaid).toBe(0);
+    });
+
+    it('should not leave sub-cent rounding residuals', () => {
+      // Use a principal and rate that tend to produce rounding residuals
+      const result = calculateDebtYear(
+        dollarsToCents(997.53),
+        0.0799,
+        dollarsToCents(200),
+        2024
+      );
+
+      // Should either be exactly 0 or a clean remaining balance
+      expect(result.endingBalance).toBeGreaterThanOrEqual(0);
+      if (result.isPaidOff) {
+        expect(result.endingBalance).toBe(0);
+      }
     });
   });
 

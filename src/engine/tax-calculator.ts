@@ -104,7 +104,7 @@ export function calculateFederalTax(
 
 /**
  * Calculate state income tax.
- * Uses simplified calculation with flat rate or top marginal rate.
+ * Uses progressive brackets for states that have them, flat rate otherwise.
  */
 export function calculateStateTax(
   grossIncome: Cents,
@@ -117,7 +117,6 @@ export function calculateStateTax(
     return { tax: 0, effectiveRate: 0 };
   }
 
-  // Calculate taxable income (simplified)
   const adjustedGross = Math.max(0, grossIncome - preRetirementContributions);
   const taxableIncome = Math.max(0, adjustedGross - config.standardDeduction);
 
@@ -125,9 +124,21 @@ export function calculateStateTax(
     return { tax: 0, effectiveRate: 0 };
   }
 
-  // For simplicity, use the state's rate directly
-  // In reality, progressive states would have brackets
-  const tax = Math.round(taxableIncome * config.rate);
+  let tax: Cents;
+
+  if (config.type === 'progressive' && config.brackets !== null) {
+    // Calculate using progressive brackets
+    tax = 0;
+    for (const bracket of config.brackets) {
+      if (taxableIncome <= bracket.min) break;
+      const taxableInBracket = Math.min(taxableIncome, bracket.max) - bracket.min;
+      tax += Math.round(taxableInBracket * bracket.rate);
+    }
+  } else {
+    // Flat rate
+    tax = Math.round(taxableIncome * config.rate);
+  }
+
   const effectiveRate = grossIncome > 0 ? tax / grossIncome : 0;
 
   return { tax, effectiveRate };

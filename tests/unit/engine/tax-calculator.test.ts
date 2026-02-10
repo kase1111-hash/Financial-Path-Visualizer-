@@ -66,15 +66,81 @@ describe('tax-calculator', () => {
     });
 
     it('should calculate tax for flat-tax states', () => {
-      // Illinois has 4.95% flat tax
+      // Illinois has 4.95% flat tax, no deduction
       const result = calculateStateTax(dollarsToCents(100000), 'IL', 0);
-      expect(result.tax).toBeGreaterThan(0);
+      // $100,000 * 4.95% = $4,950
+      expect(result.tax).toBe(dollarsToCents(4950));
     });
 
-    it('should calculate tax for progressive-tax states', () => {
-      // California has high progressive tax
-      const result = calculateStateTax(dollarsToCents(200000), 'CA', 0);
-      expect(result.tax).toBeGreaterThan(0);
+    it('should calculate progressive CA tax at $100K using brackets', () => {
+      // CA: $100,000 gross, $5,456 standard deduction, taxable = $94,544
+      // Bracket calculation (2024 single):
+      //   $10,102 * 1%   = $101.02
+      //   ($23,968 - $10,102) * 2%  = $277.32
+      //   ($37,833 - $23,968) * 4%  = $554.60
+      //   ($52,479 - $37,833) * 6%  = $878.76
+      //   ($66,362 - $52,479) * 8%  = $1,110.64
+      //   ($94,544 - $66,362) * 9.3% = $2,620.93
+      // Total ≈ $5,543.27
+      const result = calculateStateTax(dollarsToCents(100000), 'CA', 0);
+      // Should be close to $5,543 — definitely less than old flat-rate calc
+      // Old flat rate: $94,544 * 13.3% = $12,574 (way too high)
+      expect(result.tax).toBeGreaterThan(dollarsToCents(5400));
+      expect(result.tax).toBeLessThan(dollarsToCents(5700));
+    });
+
+    it('should calculate progressive CA tax at $250K using brackets', () => {
+      // CA: $250,000 gross, $5,456 deduction, taxable = $244,544
+      const result = calculateStateTax(dollarsToCents(250000), 'CA', 0);
+      // Progressive calc should be much less than flat 13.3% * $244,544 = $32,524
+      expect(result.tax).toBeGreaterThan(dollarsToCents(15000));
+      expect(result.tax).toBeLessThan(dollarsToCents(20000));
+    });
+
+    it('should calculate progressive CA tax at $500K using brackets', () => {
+      // CA: $500,000 gross, $5,456 deduction, taxable = $494,544
+      // Progressive calc through 9 brackets = ~$45,181
+      const result = calculateStateTax(dollarsToCents(500000), 'CA', 0);
+      expect(result.tax).toBeGreaterThan(dollarsToCents(44000));
+      expect(result.tax).toBeLessThan(dollarsToCents(46000));
+      // Verify it's less than the old flat-rate approach (13.3% * $494,544 = $65,774)
+      expect(result.tax).toBeLessThan(dollarsToCents(65774));
+    });
+
+    it('should calculate progressive NY tax using brackets', () => {
+      // NY: $100,000 gross, $8,000 standard deduction, taxable = $92,000
+      // NY has brackets 4%, 4.5%, 5.25%, 5.5%, 6% — bulk falls in 6% bracket
+      // Calculated: ~$5,247
+      const result = calculateStateTax(dollarsToCents(100000), 'NY', 0);
+      expect(result.tax).toBeGreaterThan(dollarsToCents(5000));
+      expect(result.tax).toBeLessThan(dollarsToCents(5500));
+    });
+
+    it('should calculate progressive NJ tax using brackets', () => {
+      // NJ: $100,000 gross, no deduction, taxable = $100,000
+      // NJ has low rates at this level (1.4% up to $20k, then 1.75%, 3.5%, 5.525%)
+      const result = calculateStateTax(dollarsToCents(100000), 'NJ', 0);
+      expect(result.tax).toBeGreaterThan(dollarsToCents(2500));
+      expect(result.tax).toBeLessThan(dollarsToCents(4500));
+    });
+
+    it('should calculate less tax with progressive brackets than old flat rate for high-bracket states', () => {
+      // For CA at moderate income, progressive brackets should yield LESS tax than flat 13.3%
+      const result = calculateStateTax(dollarsToCents(100000), 'CA', 0);
+      const flatRateWouldBe = Math.round((dollarsToCents(100000) - 545600) * 0.133);
+      expect(result.tax).toBeLessThan(flatRateWouldBe);
+    });
+
+    it('should handle retirement contributions reducing state tax', () => {
+      const without = calculateStateTax(dollarsToCents(100000), 'CA', 0);
+      const with10k = calculateStateTax(dollarsToCents(100000), 'CA', dollarsToCents(10000));
+      expect(with10k.tax).toBeLessThan(without.tax);
+    });
+
+    it('should return zero for income below standard deduction', () => {
+      // CA standard deduction is $5,456
+      const result = calculateStateTax(dollarsToCents(5000), 'CA', 0);
+      expect(result.tax).toBe(0);
     });
   });
 

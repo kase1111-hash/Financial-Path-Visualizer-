@@ -125,13 +125,15 @@ export function generateAmortizationSchedule(
     const interestPayment = Math.round(balance * monthlyRate);
     let principalPayment = monthlyPayment - interestPayment;
 
-    // Handle final payment
-    if (principalPayment >= balance) {
+    // On the last scheduled month, or when balance is small enough to pay off,
+    // adjust to zero out the balance exactly
+    if (principalPayment >= balance || month === maxMonths) {
       principalPayment = balance;
     }
 
-    const totalPayment = principalPayment + interestPayment;
     balance -= principalPayment;
+
+    const totalPayment = principalPayment + interestPayment;
     cumulativeInterest += interestPayment;
 
     schedule.push({

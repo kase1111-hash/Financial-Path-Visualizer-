@@ -98,7 +98,7 @@ export function generateTrajectory(profile: FinancialProfile): Trajectory {
           year,
           month: 1,
           type: 'retirement_ready',
-          description: `Retirement ready - can sustain $${Math.round(readiness.monthlyIncome / 100)}/month`,
+          description: `Retirement ready - can sustain $${Math.round(readiness.monthlyIncome / 100).toLocaleString()}/month`,
           relatedId: null,
         });
       }
@@ -317,7 +317,7 @@ function detectMilestones(
         year: currentYear.year,
         month: 6, // Approximate mid-year
         type: 'net_worth_milestone',
-        description: `Net worth reached $${milestone / 100}`,
+        description: `Net worth reached $${(milestone / 100).toLocaleString()}`,
         relatedId: null,
       });
       break; // Only one net worth milestone per year
