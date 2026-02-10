@@ -8,6 +8,7 @@ import type { Optimization } from '@models/optimization';
 import { createOptimization } from '@models/optimization';
 import { calculateTotalMonthlyPayment } from '@models/debt';
 import type { ScannerRule } from './index';
+import { calculateOptimizationImpact, estimateLifetimeValue } from './impact-calculator';
 
 /**
  * Detect when housing costs are too high relative to income.
@@ -40,6 +41,14 @@ const housingCostRatioRule: ScannerRule = {
 
     if (annualExcess < 100000) return null; // Less than $1k annually
 
+    // Use annuity formula — advisory rule, no direct profile modification
+    const yearsRemaining = profile.assumptions.lifeExpectancy - profile.assumptions.currentAge;
+    const lifetimeChange = estimateLifetimeValue(
+      annualExcess,
+      profile.assumptions.marketReturn,
+      yearsRemaining
+    );
+
     return createOptimization({
       type: 'housing',
       title: 'Housing Cost Alert',
@@ -50,7 +59,7 @@ const housingCostRatioRule: ScannerRule = {
       impact: {
         monthlyChange: Math.round(annualExcess / 12),
         annualChange: annualExcess,
-        lifetimeChange: annualExcess * 15,
+        lifetimeChange,
         retirementDateChange: Math.round((annualExcess * 12) / year.grossIncome),
         metricAffected: 'Housing Cost',
       },
@@ -63,12 +72,13 @@ const housingCostRatioRule: ScannerRule = {
 
 /**
  * Compare mortgage prepayment vs investing the extra money.
+ * Uses the profile's marketReturn assumption instead of a hardcoded rate.
  */
 const prepaymentVsInvestRule: ScannerRule = {
   id: 'prepayment-vs-invest',
   name: 'Prepayment vs Investment',
   type: 'housing',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     const mortgage = profile.debts.find((d) => d.type === 'mortgage');
     if (!mortgage) return null;
 
@@ -76,36 +86,48 @@ const prepaymentVsInvestRule: ScannerRule = {
     const extraPayment = mortgage.actualPayment - mortgage.minimumPayment;
     if (extraPayment < 10000) return null; // Less than $100 extra
 
-    // Compare mortgage rate to expected investment return
-    const EXPECTED_STOCK_RETURN = 0.08; // 8% historical average
+    // Use the profile's market return assumption
+    const expectedReturn = profile.assumptions.marketReturn;
     const mortgageRate = mortgage.interestRate;
 
     // If mortgage rate is lower than expected returns, suggest investing
-    if (mortgageRate >= EXPECTED_STOCK_RETURN - 0.01) return null; // Within 1%, preference is fine
+    if (mortgageRate >= expectedReturn - 0.01) return null; // Within 1%, preference is fine
 
     const annualExtraPayment = extraPayment * 12;
-    const rateDifference = EXPECTED_STOCK_RETURN - mortgageRate;
+    const rateDifference = expectedReturn - mortgageRate;
     const opportunityCost = Math.round(annualExtraPayment * rateDifference);
 
-    // Calculate 20-year difference
+    // Calculate future value difference using the user's assumptions
     const yearsRemaining = Math.min(20, Math.ceil(mortgage.monthsRemaining / 12));
-    const investmentFutureValue = annualExtraPayment * ((Math.pow(1 + EXPECTED_STOCK_RETURN, yearsRemaining) - 1) / EXPECTED_STOCK_RETURN);
+    const investmentFutureValue = annualExtraPayment * ((Math.pow(1 + expectedReturn, yearsRemaining) - 1) / expectedReturn);
     const mortgageSavings = annualExtraPayment * yearsRemaining; // Simplified
 
     const lifetimeDifference = Math.round(investmentFutureValue - mortgageSavings);
 
     if (lifetimeDifference < 1000000) return null; // Less than $10k lifetime difference
 
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      const modMortgage = modified.debts.find((d) => d.id === mortgage.id);
+      if (modMortgage) {
+        modMortgage.actualPayment = modMortgage.minimumPayment;
+      }
+      const investment = modified.assets.find((a) => a.type === 'investment');
+      if (investment) {
+        investment.monthlyContribution += extraPayment;
+      }
+    });
+
     return createOptimization({
       type: 'housing',
       title: 'Consider Investing vs Prepaying',
-      explanation: `You're making $${Math.round(extraPayment / 100).toLocaleString()}/month in extra mortgage payments at ${(mortgageRate * 100).toFixed(2)}% interest. Historically, stock market returns average ~8%. You might build more wealth by investing the extra instead.`,
-      action: `Consider redirecting $${Math.round(extraPayment / 100).toLocaleString()}/month from mortgage prepayment to tax-advantaged investments. Over ${yearsRemaining} years, this could result in approximately $${Math.round(lifetimeDifference / 100).toLocaleString()} more wealth (assuming 8% returns).`,
+      explanation: `You're making $${Math.round(extraPayment / 100).toLocaleString()}/month in extra mortgage payments at ${(mortgageRate * 100).toFixed(2)}% interest. Your assumed market return is ${(expectedReturn * 100).toFixed(0)}%. You might build more wealth by investing the extra instead.`,
+      action: `Consider redirecting $${Math.round(extraPayment / 100).toLocaleString()}/month from mortgage prepayment to tax-advantaged investments. Over ${yearsRemaining} years, this could result in approximately $${Math.round(lifetimeDifference / 100).toLocaleString()} more wealth (assuming ${(expectedReturn * 100).toFixed(0)}% returns).`,
       impact: {
         monthlyChange: 0,
         annualChange: opportunityCost,
-        lifetimeChange: lifetimeDifference,
-        retirementDateChange: -Math.round((lifetimeDifference / 10) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Net Worth',
       },
       confidence: 'medium',
@@ -121,13 +143,13 @@ const prepaymentVsInvestRule: ScannerRule = {
 };
 
 /**
- * Detect opportunity to increase property value through home improvements.
+ * Detect opportunity to consolidate high-interest debt using home equity.
  */
 const homeEquityRule: ScannerRule = {
   id: 'home-equity-building',
   name: 'Home Equity Building',
   type: 'housing',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     const mortgage = profile.debts.find((d) => d.type === 'mortgage');
     if (mortgage?.propertyValue == null) return null;
 
@@ -154,6 +176,17 @@ const homeEquityRule: ScannerRule = {
 
     if (annualSavings < 50000) return null; // Less than $500/year savings
 
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      // Simulate consolidation: reduce interest rates on high-interest debts to HELOC rate
+      for (const debt of highInterestDebt) {
+        const modDebt = modified.debts.find((d) => d.id === debt.id);
+        if (modDebt) {
+          modDebt.interestRate = helocRate;
+        }
+      }
+    });
+
     return createOptimization({
       type: 'housing',
       title: 'Consolidate Debt with Home Equity',
@@ -162,8 +195,8 @@ const homeEquityRule: ScannerRule = {
       impact: {
         monthlyChange: Math.round(annualSavings / 12),
         annualChange: annualSavings,
-        lifetimeChange: annualSavings * 5,
-        retirementDateChange: -Math.round((annualSavings * 6) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Interest Expense',
       },
       confidence: 'low', // Low because of risk of securing debt with home
@@ -204,6 +237,14 @@ const propertyTaxRule: ScannerRule = {
 
     if (potentialSavings < 50000) return null; // Less than $500 potential savings
 
+    // Use annuity formula — advisory rule, no direct profile modification
+    const yearsRemaining = profile.assumptions.lifeExpectancy - profile.assumptions.currentAge;
+    const lifetimeChange = estimateLifetimeValue(
+      potentialSavings,
+      profile.assumptions.marketReturn,
+      yearsRemaining
+    );
+
     return createOptimization({
       type: 'housing',
       title: 'Appeal Property Tax Assessment',
@@ -212,7 +253,7 @@ const propertyTaxRule: ScannerRule = {
       impact: {
         monthlyChange: Math.round(potentialSavings / 12),
         annualChange: potentialSavings,
-        lifetimeChange: potentialSavings * 10,
+        lifetimeChange,
         retirementDateChange: -Math.round((potentialSavings * 6) / year.grossIncome),
         metricAffected: 'Property Taxes',
       },

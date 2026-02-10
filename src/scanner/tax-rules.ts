@@ -8,6 +8,7 @@ import type { Optimization } from '@models/optimization';
 import { createOptimization } from '@models/optimization';
 import { FEDERAL_TAX_BRACKETS, RETIREMENT_LIMITS } from '@data/federal-tax-brackets';
 import type { ScannerRule } from './index';
+import { calculateOptimizationImpact, estimateOneTimeImpact } from './impact-calculator';
 
 /** Age threshold for catch-up contributions */
 const CATCH_UP_AGE = 50;
@@ -20,7 +21,7 @@ const bracketBoundaryRule: ScannerRule = {
   id: 'tax-bracket-boundary',
   name: 'Tax Bracket Boundary Detection',
   type: 'tax',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     const { taxFilingStatus } = profile.assumptions;
     const brackets = FEDERAL_TAX_BRACKETS[taxFilingStatus];
     const taxableIncome = year.grossIncome;
@@ -52,6 +53,16 @@ const bracketBoundaryRule: ScannerRule = {
 
       if (potentialSavings < 10000) return null; // Less than $100 savings
 
+      // Calculate real lifetime impact via trajectory comparison
+      const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+        const retirementAsset = modified.assets.find(
+          (a) => a.type === 'retirement_pretax' || a.type === 'retirement_roth'
+        );
+        if (retirementAsset) {
+          retirementAsset.monthlyContribution += Math.round(amountToReduce / 12);
+        }
+      });
+
       return createOptimization({
         type: 'tax',
         title: 'Tax Bracket Optimization',
@@ -60,8 +71,8 @@ const bracketBoundaryRule: ScannerRule = {
         impact: {
           monthlyChange: Math.round(potentialSavings / 12),
           annualChange: potentialSavings,
-          lifetimeChange: potentialSavings * 20, // Rough estimate
-          retirementDateChange: -Math.round((potentialSavings * 12) / year.grossIncome),
+          lifetimeChange: impact.lifetimeChange,
+          retirementDateChange: impact.retirementDateChange,
           metricAffected: 'Federal Tax',
         },
         confidence: 'high',
@@ -84,7 +95,7 @@ const employerMatchRule: ScannerRule = {
   id: 'employer-match-alert',
   name: 'Employer Match Alert',
   type: 'tax',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     // Find retirement assets with employer match
     const retirementAssets = profile.assets.filter(
       (a) =>
@@ -111,6 +122,14 @@ const employerMatchRule: ScannerRule = {
         const missedMatch = maxEmployerContrib - actualEmployerContrib;
         const requiredIncrease = Math.round(missedMatch / asset.employerMatch);
 
+        // Calculate real lifetime impact via trajectory comparison
+        const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+          const modAsset = modified.assets.find((a) => a.id === asset.id);
+          if (modAsset) {
+            modAsset.monthlyContribution += Math.round(requiredIncrease / 12);
+          }
+        });
+
         return createOptimization({
           type: 'tax',
           title: 'Free Money: Employer Match',
@@ -119,8 +138,8 @@ const employerMatchRule: ScannerRule = {
           impact: {
             monthlyChange: Math.round(missedMatch / 12),
             annualChange: missedMatch,
-            lifetimeChange: missedMatch * 30, // 30 years of compounding
-            retirementDateChange: -Math.round((missedMatch * 12) / year.grossIncome),
+            lifetimeChange: impact.lifetimeChange,
+            retirementDateChange: impact.retirementDateChange,
             metricAffected: 'Retirement Savings',
           },
           confidence: 'high',
@@ -161,9 +180,12 @@ const rothConversionRule: ScannerRule = {
     const { taxFilingStatus } = profile.assumptions;
     const brackets = FEDERAL_TAX_BRACKETS[taxFilingStatus];
     let currentBracket = brackets[0];
-    for (const bracket of brackets) {
-      if (year.grossIncome >= bracket.min && year.grossIncome < bracket.max) {
+    let currentBracketIndex = 0;
+    for (let i = 0; i < brackets.length; i++) {
+      const bracket = brackets[i];
+      if (bracket && year.grossIncome >= bracket.min && year.grossIncome < bracket.max) {
         currentBracket = bracket;
+        currentBracketIndex = i;
         break;
       }
     }
@@ -178,6 +200,17 @@ const rothConversionRule: ScannerRule = {
 
     const taxOnConversion = Math.round(suggestedConversion * currentBracket.rate);
 
+    // Estimate lifetime impact: tax saved by converting at lower rate now vs higher rate later
+    const nextBracket = brackets[currentBracketIndex + 1];
+    const futureRateDiff = nextBracket ? (nextBracket.rate - currentBracket.rate) : 0.05;
+    const oneTimeTaxSavings = Math.round(suggestedConversion * futureRateDiff);
+    const yearsRemaining = profile.assumptions.lifeExpectancy - profile.assumptions.currentAge;
+    const lifetimeChange = estimateOneTimeImpact(
+      oneTimeTaxSavings,
+      profile.assumptions.marketReturn,
+      yearsRemaining
+    );
+
     return createOptimization({
       type: 'tax',
       title: 'Roth Conversion Opportunity',
@@ -186,7 +219,7 @@ const rothConversionRule: ScannerRule = {
       impact: {
         monthlyChange: 0,
         annualChange: 0,
-        lifetimeChange: Math.round(suggestedConversion * 0.1), // Rough estimate of tax savings
+        lifetimeChange,
         retirementDateChange: 0,
         metricAffected: 'Tax Diversification',
       },
@@ -209,7 +242,7 @@ const taxAdvantagedSpaceRule: ScannerRule = {
   id: 'tax-advantaged-space',
   name: 'Tax-Advantaged Space',
   type: 'tax',
-  scan: (profile, _trajectory, year): Optimization | null => {
+  scan: (profile, trajectory, year): Optimization | null => {
     // Calculate user's age for this year
     const userAge = profile.assumptions.currentAge + (year.year - new Date().getFullYear());
     const isEligibleForCatchUp = userAge >= CATCH_UP_AGE;
@@ -253,6 +286,16 @@ const taxAdvantagedSpaceRule: ScannerRule = {
       ? ` (includes $${Math.round(catchUpAmount / 100).toLocaleString()} catch-up contribution for age 50+)`
       : '';
 
+    // Calculate real lifetime impact via trajectory comparison
+    const impact = calculateOptimizationImpact(profile, trajectory, (modified) => {
+      const retirementAssets = modified.assets.filter(
+        (a) => a.type === 'retirement_pretax' || a.type === 'retirement_roth'
+      );
+      if (retirementAssets.length > 0) {
+        retirementAssets[0]!.monthlyContribution += Math.round(unusedSpace / 12);
+      }
+    });
+
     return createOptimization({
       type: 'tax',
       title: 'Unused Tax-Advantaged Space',
@@ -261,8 +304,8 @@ const taxAdvantagedSpaceRule: ScannerRule = {
       impact: {
         monthlyChange: Math.round(taxSavings / 12),
         annualChange: taxSavings,
-        lifetimeChange: taxSavings * 20,
-        retirementDateChange: -Math.round((taxSavings * 24) / year.grossIncome),
+        lifetimeChange: impact.lifetimeChange,
+        retirementDateChange: impact.retirementDateChange,
         metricAffected: 'Tax-Advantaged Savings',
       },
       confidence: year.discretionaryIncome > unusedSpace ? 'high' : 'low',
