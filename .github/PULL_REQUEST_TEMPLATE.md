@@ -23,8 +23,7 @@ Closes #(issue number)
 
 ## Checklist
 
-- [ ] I have read the [CONTRIBUTING](CONTRIBUTING.md) guidelines
-- [ ] My code follows the project's code style
+- [ ] My code follows the project's code style (see `claude.md`)
 - [ ] I have run `npm run lint` and fixed any issues
 - [ ] I have run `npm run typecheck` and fixed any type errors
 - [ ] I have added tests that prove my fix/feature works

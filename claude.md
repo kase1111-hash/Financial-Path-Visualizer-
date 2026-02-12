@@ -122,16 +122,21 @@ function createComponent(props: Props): { element: HTMLElement; destroy(): void 
 Centralized store with subscription pattern in `src/ui/utils/state.ts`:
 
 ```typescript
-import { appStore, dispatch } from '@ui/utils/state';
+import { appStore, navigate, setLoading, setError } from '@ui/utils/state';
 
 // Read state
-const state = appStore.getState();
+const state = appStore.get();
 
 // Subscribe to changes
-const unsubscribe = appStore.subscribe((state) => { /* update UI */ });
+const unsubscribe = appStore.subscribe((state, prevState) => { /* update UI */ });
 
-// Dispatch actions
-dispatch({ type: 'SET_VIEW', payload: 'trajectory' });
+// Update state directly
+appStore.update({ isLoading: true });
+
+// Use helper functions for common operations
+navigate('trajectory');
+setLoading(false);
+setError('Something went wrong');
 ```
 
 ## Key Files to Understand
@@ -229,4 +234,4 @@ import { profileStore } from '@storage/profile-store';
 - No external API calls
 - No telemetry or analytics
 - Export format is plain JSON
-- See `SECURITY.md` for vulnerability reporting
+- Report vulnerabilities via [GitHub Issues](https://github.com/kase1111-hash/Financial-Path-Visualizer/issues)
