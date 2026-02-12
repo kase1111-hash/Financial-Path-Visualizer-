@@ -98,10 +98,15 @@ No judgment. Just paths.
 
 ```bash
 npm install
-npm run dev       # development server
-npm run build     # production build
-npm test          # run tests
-npm run lint      # run linter
+npm run dev          # development server at localhost:5173
+npm run build        # production build
+npm run preview      # preview production build locally
+npm run typecheck    # type checking
+npm run lint         # check for lint errors
+npm run lint:fix     # lint with auto-fix
+npm run test:run     # unit tests (single run)
+npm test             # unit tests (watch mode)
+npm run test:e2e     # end-to-end tests (headless)
 ```
 
 ### Tech Stack
